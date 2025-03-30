@@ -10,13 +10,29 @@ load_dotenv()
 
 # Конфигурация
 TOKEN = str(os.getenv("BOT_TOKEN"))
-API_ENDPOINT = "https://your-vpn-api.com/activate"
+API_URL = "https://svoivpn.duckdns.org:443/users"
 STRIPE_TOKEN = "your-stripe-token"
 NOWPAYMENTS_API_KEY = os.getenv("NOWPAYMENTS_API_KEY")
 CRYPTO_API_URL = "https://api.nowpayments.io/v1/"
 
 bot = telebot.TeleBot(TOKEN)
 transactions = {}
+
+
+def register_user_in_db(telegram_id, referral_id=None):
+    """Регистрирует пользователя в базе данных через API"""
+    payload = {
+        "telegram_id": int(telegram_id),
+        "subscription_days": 1,  # Начальные дни подписки = 0
+        "referral_id": referral_id  # Опционально
+    }
+    try:
+        response = requests.post(API_URL, json=payload)
+        print(response)
+        return response.status_code == 200  # Возвращает True, если успешно
+    except requests.RequestException as e:
+        print(f"Error while registering user: {e}")
+        return False
 
 
 # Клавиатура выбора способа оплаты
@@ -34,11 +50,23 @@ def payment_keyboard():
 
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
-    bot.send_message(
-        message.chat.id,
-        "🎛 Выберите способ оплаты для доступа к VPN:",
-        reply_markup=payment_keyboard()
-    )
+    """Обрабатывает команду /start, регистрирует пользователя"""
+    user_id = int(message.from_user.id)
+    referral_id = None
+
+    # Проверяем, есть ли реферальный ID в аргументах команды
+    args = message.text.split()
+    if len(args) > 1:
+        referral_id = int(args[1])  # Например: /start 12345678
+
+    if register_user_in_db(user_id, referral_id):
+        bot.send_message(
+            message.chat.id,
+            "✅ Вы зарегистрированы! Теперь выберите способ оплаты:",
+            reply_markup=payment_keyboard()
+        )
+    else:
+        bot.send_message(message.chat.id, "🚨 Ошибка регистрации. Попробуйте позже.")
 
 
 @bot.callback_query_handler(func=lambda call: True)
@@ -75,14 +103,6 @@ def handle_telegram_stars(call):
         prices=prices,
         start_parameter="vpn-payment"
     )
-
-
-@bot.pre_checkout_query_handler(func=lambda query: True)
-def process_pre_checkout(pre_checkout_query):
-    if pre_checkout_query.invoice_payload != "vpn-premium-month":
-        bot.answer_pre_checkout_query(pre_checkout_query.id, ok=False, error_message="Ошибка платежа")
-    else:
-        bot.answer_pre_checkout_query(pre_checkout_query.id, ok=True)
 
 
 def generate_crypto_address(user_id, amount=5.0):
@@ -136,8 +156,8 @@ def handle_crypto_payment(call):
             message_id=call.message.message_id,
             text=f" Криптоплатеж:\n"
                  f"Сумма: $5.00\n"
-                 f"Адрес для оплаты: `{address}`\n"
-                 f"ID платежа: `{payment_id}`\n"
+                 f"Адрес для оплаты: {address}\n"
+                 f"ID платежа: {payment_id}\n"
                  "После оплаты нажмите /check_payment",
         )
     else:
