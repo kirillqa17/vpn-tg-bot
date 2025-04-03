@@ -15,6 +15,7 @@ TOKEN = str(os.getenv("BOT_TOKEN"))
 MONTH = int(os.getenv("1_MONTH"))
 THREE_MOTHS = int(os.getenv("3_MONTH"))
 YEAR = int(os.getenv("YEAR"))
+PROVIDER_TOKEN = os.getenv("PROVIDER_TOKEN")  # Токен платежного провайдера
 
 bot = telebot.TeleBot(TOKEN)
 transactions = {}
@@ -162,6 +163,71 @@ def handle_subscription_choice(call):
         parse_mode="Markdown",
         reply_markup=payment_keyboard()
     )
+
+
+@bot.callback_query_handler(func=lambda call: call.data in ["card"])
+def handle_payment(call):
+    """Обрабатывает оплату через Telegram Payments"""
+    user_id = call.from_user.id
+
+    if user_id not in transactions:
+        bot.answer_callback_query(call.id, "Ошибка: выберите подписку сначала!", show_alert=True)
+        return
+
+    chosen_plan = transactions[user_id]["plan"]
+    price = transactions[user_id]["price"]
+
+    currency = os.getenv("CURRENCY", "RUB")
+
+    prices = [types.LabeledPrice(label=f"Подписка на {chosen_plan}",
+                                 amount=price * 100)]  # Умножаем на 100, так как в копейках
+
+    bot.send_invoice(
+        chat_id=call.message.chat.id,
+        title=f"Подписка на {chosen_plan}",
+        description=f"Оплата подписки {chosen_plan} на сервис SvoiVPN.",
+        invoice_payload=f"user_{user_id}_{chosen_plan}",
+        provider_token=PROVIDER_TOKEN,
+        currency=currency,
+        prices=prices,
+        start_parameter="vpn_subscription",
+        is_flexible=False,
+        need_email=True,
+        send_email_to_provider=True,
+        provider_data= 
+    )
+
+@bot.pre_checkout_query_handler(func=lambda query: True)
+def checkout_process(pre_checkout_query):
+    bot.answer_pre_checkout_query(pre_checkout_query.id, ok=True)
+
+@bot.message_handler(content_types=['successful_payment'])
+def successful_payment(message):
+    """Обрабатывает успешный платеж"""
+    user_id = message.from_user.id
+    total_amount = message.successful_payment.total_amount // 100  # Сумма в рублях
+    payload = message.successful_payment.invoice_payload  # payload из sendInvoice
+    transaction_id = message.successful_payment.provider_payment_charge_id  # ID платежа в ЮKassa
+
+    chosen_plan = transactions.get(user_id, {}).get("plan", "Неизвестно")
+
+    # Активируем подписку
+    success = extend_subscription(user_id, days=30)  # Пример: 30 дней за оплату
+
+    if success:
+        bot.send_message(
+            message.chat.id,
+            f"✅ Оплата прошла успешно! Ваша подписка на {chosen_plan} активирована.\n"
+            f"🔑 Ваш конфиг: {get_config(user_id)}\n"
+            f"📌 Номер транзакции: `{transaction_id}`",
+            parse_mode="Markdown"
+        )
+    else:
+        bot.send_message(message.chat.id, "🚨 Ошибка при активации подписки. Свяжитесь с поддержкой.")
+
+    # Удаляем транзакцию
+    transactions.pop(user_id, None)
+
 
 @bot.message_handler(func=lambda message: message.text == "📥 Получить свой конфиг")
 def handle_get_config(message):
