@@ -194,7 +194,6 @@ def handle_payment(call):
         is_flexible=False,
         need_email=True,
         send_email_to_provider=True,
-        provider_data= 
     )
 
 @bot.pre_checkout_query_handler(func=lambda query: True)
@@ -204,23 +203,27 @@ def checkout_process(pre_checkout_query):
 @bot.message_handler(content_types=['successful_payment'])
 def successful_payment(message):
     """Обрабатывает успешный платеж"""
+    subscription_mapping = {
+        "1 месяц": 30,
+        "3 месяца": 90,
+        "1 год": 365,
+    }
     user_id = message.from_user.id
     total_amount = message.successful_payment.total_amount // 100  # Сумма в рублях
-    payload = message.successful_payment.invoice_payload  # payload из sendInvoice
     transaction_id = message.successful_payment.provider_payment_charge_id  # ID платежа в ЮKassa
 
-    chosen_plan = transactions.get(user_id, {}).get("plan", "Неизвестно")
+    chosen_plan = transactions[user_id]["plan"]
 
     # Активируем подписку
-    success = extend_subscription(user_id, days=30)  # Пример: 30 дней за оплату
+    success = extend_subscription(user_id, days=subscription_mapping[chosen_plan])
 
     if success:
         bot.send_message(
             message.chat.id,
             f"✅ Оплата прошла успешно! Ваша подписка на {chosen_plan} активирована.\n"
-            f"🔑 Ваш конфиг: {get_config(user_id)}\n"
+            f"🔑 Ваш конфиг:\n{get_config(user_id)}\n"
             f"📌 Номер транзакции: `{transaction_id}`",
-            parse_mode="Markdown"
+            parse_mode="HTML"
         )
     else:
         bot.send_message(message.chat.id, "🚨 Ошибка при активации подписки. Свяжитесь с поддержкой.")
