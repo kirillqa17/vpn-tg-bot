@@ -13,10 +13,9 @@ def payment_keyboard():
     markup = types.InlineKeyboardMarkup()
     markup.row(
         types.InlineKeyboardButton("💳 Банковская карта", callback_data="card"),
-        types.InlineKeyboardButton("₿ Криптовалюта", callback_data="crypto")
     )
     markup.row(
-        types.InlineKeyboardButton("⭐ Telegram Stars", callback_data="stars")
+        types.InlineKeyboardButton("₿ Криптовалюта", callback_data="crypto")
     )
     return markup
 

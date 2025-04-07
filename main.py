@@ -6,7 +6,7 @@ from datetime import datetime
 
 from utils.api import *
 from utils.keyboards import *
-
+from utils.crypto import get_pay_link, check_payment_status, currencies, get_crypto_price
 
 load_dotenv()
 
@@ -15,10 +15,20 @@ TOKEN = str(os.getenv("BOT_TOKEN"))
 MONTH = int(os.getenv("1_MONTH"))
 THREE_MOTHS = int(os.getenv("3_MONTH"))
 YEAR = int(os.getenv("YEAR"))
+CRYPTO_MONTH = float(os.getenv("CRYPTO_MONTH"))
+CRYPTO_THREE_MONTHS = float(os.getenv("CRYPTO_3_MONTH"))
+CRYPTO_YEAR = float(os.getenv("CRYPTO_YEAR"))
 PROVIDER_TOKEN = os.getenv("PROVIDER_TOKEN")  # Токен платежного провайдера
 
 bot = telebot.TeleBot(TOKEN)
 transactions = {}
+invoices = {}
+
+subscription_mapping = {
+    "1 месяц": 30,
+    "3 месяца": 90,
+    "1 год": 365,
+}
 
 
 @bot.message_handler(commands=['start'])
@@ -134,6 +144,7 @@ def handle_trial_confirmation(call):
         )
         bot.send_message(call.message.chat.id, "📜 Выберите действие ниже:", reply_markup=main_menu())
 
+
 @bot.message_handler(func=lambda message: message.text == "💳 Приобрести подписку")
 def handle_subscription(message):
     bot.send_message(
@@ -141,6 +152,7 @@ def handle_subscription(message):
         "📅 Выберите срок подписки:",
         reply_markup=subscription_duration_keyboard()
     )
+
 
 @bot.callback_query_handler(func=lambda call: call.data in ["sub_1m", "sub_3m", "sub_1y"])
 def handle_subscription_choice(call):
@@ -182,6 +194,22 @@ def handle_payment(call):
     prices = [types.LabeledPrice(label=f"Подписка на {chosen_plan}",
                                  amount=price * 100)]  # Умножаем на 100, так как в копейках
 
+    provider_data = {
+        "receipt": {
+            "items": [
+                {
+                    "description": f"Подписка на {chosen_plan}",
+                    "quantity": "1.00",
+                    "amount": {
+                        "value": f"{price}",
+                        "currency": currency
+                    },
+                    "vat_code": 1
+                }
+            ]
+        }
+    }
+
     bot.send_invoice(
         chat_id=call.message.chat.id,
         title=f"Подписка на {chosen_plan}",
@@ -194,22 +222,19 @@ def handle_payment(call):
         is_flexible=False,
         need_email=True,
         send_email_to_provider=True,
+        provider_data=json.dumps(provider_data)
     )
+
 
 @bot.pre_checkout_query_handler(func=lambda query: True)
 def checkout_process(pre_checkout_query):
     bot.answer_pre_checkout_query(pre_checkout_query.id, ok=True)
 
+
 @bot.message_handler(content_types=['successful_payment'])
 def successful_payment(message):
     """Обрабатывает успешный платеж"""
-    subscription_mapping = {
-        "1 месяц": 30,
-        "3 месяца": 90,
-        "1 год": 365,
-    }
     user_id = message.from_user.id
-    total_amount = message.successful_payment.total_amount // 100  # Сумма в рублях
     transaction_id = message.successful_payment.provider_payment_charge_id  # ID платежа в ЮKassa
 
     chosen_plan = transactions[user_id]["plan"]
@@ -222,7 +247,7 @@ def successful_payment(message):
             message.chat.id,
             f"✅ Оплата прошла успешно! Ваша подписка на {chosen_plan} активирована.\n"
             f"🔑 Ваш конфиг:\n{get_config(user_id)}\n"
-            f"📌 Номер транзакции: `{transaction_id}`",
+            f"📌 Номер транзакции: <code>{transaction_id}</code>",
             parse_mode="HTML"
         )
     else:
@@ -230,6 +255,108 @@ def successful_payment(message):
 
     # Удаляем транзакцию
     transactions.pop(user_id, None)
+
+
+@bot.callback_query_handler(func=lambda call: call.data == "crypto")
+def handle_crypto_payment(call):
+    user_id = call.from_user.id
+
+    if user_id not in transactions:
+        bot.answer_callback_query(call.id, "Ошибка: выберите подписку сначала!", show_alert=True)
+        return
+
+    chosen_plan = transactions[user_id]["plan"]
+    currency_markup = types.InlineKeyboardMarkup()
+
+    # Создаем кнопки для выбора криптовалюты
+    for currency in currencies:
+        currency_markup.add(types.InlineKeyboardButton(text=currency, callback_data=f"crypto_{currency}"))
+
+    bot.edit_message_text(
+        f"✅ Вы выбрали оплату криптовалютой. Выберите валюту для оплаты подписки на *{chosen_plan}*:",
+        chat_id=call.message.chat.id,
+        message_id=call.message.message_id,
+        parse_mode="Markdown",
+        reply_markup=currency_markup
+    )
+
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith("crypto_"))
+def handle_currency_choice(call):
+    user_id = call.from_user.id
+    selected_currency = call.data.split("crypto_")[1]  # Получаем выбранную валюту
+
+    if user_id not in transactions:
+        bot.answer_callback_query(call.id, "Ошибка: выберите подписку сначала!", show_alert=True)
+        return
+
+    chosen_plan = transactions[user_id]["plan"]
+    price = None
+
+    # Устанавливаем цену в зависимости от выбранного плана
+    if chosen_plan == "1 месяц":
+        price = CRYPTO_MONTH
+    elif chosen_plan == "3 месяца":
+        price = CRYPTO_THREE_MONTHS
+    elif chosen_plan == "1 год":
+        price = CRYPTO_YEAR
+    price = round(price / get_crypto_price(selected_currency), 8)
+
+    # Получаем ссылку на оплату с выбранной криптовалютой
+    pay_link, invoice_id = get_pay_link(str(price), selected_currency)
+    if pay_link and invoice_id:
+        invoices[user_id] = invoice_id
+        markup = types.InlineKeyboardMarkup()
+        markup.add(types.InlineKeyboardButton(text=f"Оплатить {price} {selected_currency}", url=pay_link))
+        markup.add(types.InlineKeyboardButton(text="Проверить оплату", callback_data=f'check_payment_{invoice_id}'))
+        bot.send_message(user_id,
+                         "Перейдите по этой ссылке для оплаты и после успешной транзакции нажмите <b><i>Проверить оплату</i></b>",
+                         reply_markup=markup, parse_mode="HTML")
+    else:
+        bot.answer_callback_query(call.id, 'Ошибка: Не удалось создать счет на оплату.')
+
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith('check_payment_'))
+def check_payment(call):
+    chat_id = call.message.chat.id
+    invoice_id = call.data.split('check_payment_')[1]
+    payment_status = check_payment_status(invoice_id)
+    if payment_status and payment_status.get('ok'):
+        if 'items' in payment_status['result']:
+            invoice = next((inv for inv in payment_status['result']['items'] if str(inv['invoice_id']) == invoice_id),
+                           None)
+            if invoice:
+                status = invoice['status']
+                if status == 'paid':
+                    chosen_plan = transactions[chat_id]["plan"]
+
+                    # Активируем подписку
+                    success = extend_subscription(chat_id, days=subscription_mapping[chosen_plan])
+
+                    if success:
+                        bot.send_message(
+                            chat_id,
+                            f"✅ Оплата прошла успешно! Ваша подписка на {chosen_plan} активирована.\n"
+                            f"🔑 Ваш конфиг:\n{get_config(chat_id)}\n",
+                            parse_mode="HTML"
+                        )
+                    else:
+                        bot.send_message(chat_id, "🚨 Ошибка при активации подписки. Свяжитесь с поддержкой.")
+
+                    # Чтобы избежать дублирования счетов, удалим его из списка
+                    invoices.pop(chat_id, None)
+                    transactions.pop(chat_id, None)
+                    bot.answer_callback_query(call.id)
+                else:
+                    bot.answer_callback_query(call.id, 'Оплата не найдена❌', show_alert=True)
+            else:
+                bot.answer_callback_query(call.id, 'Счет не найден.', show_alert=True)
+        else:
+            print(f"Ответ от API не содержит ключа 'items': {payment_status}")
+            bot.answer_callback_query(call.id, 'Ошибка при получении статуса оплаты.', show_alert=True)
+    else:
+        print(f"Ошибка при запросе статуса оплаты: {payment_status}")
+        bot.answer_callback_query(call.id, 'Ошибка при получении статуса оплаты.', show_alert=True)
 
 
 @bot.message_handler(func=lambda message: message.text == "📥 Получить свой конфиг")

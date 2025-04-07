@@ -6,6 +6,7 @@ load_dotenv()
 
 API_URL = os.getenv("API_URL")
 
+
 def register_user_in_db(telegram_id, referral_id=None):
     """Регистрирует пользователя в базе данных через API"""
     payload = {
