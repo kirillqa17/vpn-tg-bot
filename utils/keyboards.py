@@ -33,6 +33,22 @@ def subscription_duration_keyboard():
     return markup
 
 
+def instructions_keyboard():
+    markup = types.InlineKeyboardMarkup()
+    markup.row(
+        types.InlineKeyboardButton("🤖 Android",
+                                   url='https://telegra.ph/Instrukciya-ustanovki-i-primeneniya-konfiga-SvoiVPN-dlya-Android-04-09'),
+        types.InlineKeyboardButton("🍏 iPhone",
+                                   url='https://telegra.ph/Instrukciya-ustanovki-i-primeneniya-konfiga-SvoiVPN-dlya-Iphone-04-09'),
+    )
+    markup.row(
+        types.InlineKeyboardButton("💻 ПК",
+                                   url='https://telegra.ph/Instrukciya-ustanovki-i-primeneniya-konfiga-SvoiVPN-dlya-PK-04-09'),
+    )
+    return markup
+
+
+
 def main_menu():
     """Создает основное меню"""
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
@@ -43,5 +59,3 @@ def main_menu():
     markup.add("👨‍👩‍👧‍👦 Реферальная система")
     markup.add("📖 Инструкции")
     return markup
-
-

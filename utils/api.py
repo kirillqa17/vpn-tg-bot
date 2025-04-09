@@ -85,7 +85,7 @@ def get_config(telegram_id):
     uuid = get_user_info(telegram_id)["uuid"]
     activity = get_user_info(telegram_id)["is_active"]
     if activity == 1:
-        conf = f"<code>vless://{uuid}@svoivpn.duckdns.org:8443?security=tls&type=tcp#VPN</code>"
+        conf = f"<code>vless://{uuid}@svoivpn.duckdns.org:8443?security=tls&type=tcp#VPN_NE</code>"
         return conf
     else:
         return 0
