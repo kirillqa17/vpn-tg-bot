@@ -1,6 +1,8 @@
 from dotenv import load_dotenv
 import os
 import requests, json
+from datetime import datetime
+
 
 load_dotenv()
 
@@ -46,6 +48,22 @@ def change_trial_status(telegram_id, status):
         print(f"Ошибка при изменении статуса пробного периода: {e}")
         return False
 
+def change_ref_bonus_status(telegram_id, status):
+    url = f"{API_URL}/{telegram_id}/ref_bonus"
+    headers = {
+        "Content-Type": "application/json"
+    }
+    data = bool(status)
+    try:
+        response = requests.patch(url, data=json.dumps(data), headers=headers)
+        if response.status_code == 200:
+            return True
+        else:
+            print(f"Ошибка: {response.status_code}")
+            print(response.text)
+    except requests.RequestException as e:
+        print(f"Ошибка при изменении статуса реферального бонуса: {e}")
+        return False
 
 def extend_subscription(telegram_id, days):
     """Продлевает подписку пользователю"""
@@ -65,8 +83,11 @@ def extend_subscription(telegram_id, days):
         print(f"Ошибка при продлении подписки: {e}")
         return False
 
-
-
+def sub_end(telegram_id):
+    sub_end = get_user_info(telegram_id)["subscription_end"]
+    dt_object = datetime.fromisoformat(sub_end.replace("Z", "+03:00"))
+    user_friendly_format = dt_object.strftime("%d.%m.%Y, %H:%M")
+    return user_friendly_format
 def get_user_info(telegram_id):
     """Получает информацию о пользователе"""
     url = f"{API_URL}/{telegram_id}/info"

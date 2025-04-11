@@ -2,7 +2,6 @@ import os
 import telebot
 from telebot import types
 from dotenv import load_dotenv
-from datetime import datetime
 
 from utils.api import *
 from utils.keyboards import *
@@ -74,17 +73,15 @@ def handle_ref_info(message):
                      )
 
 
-@bot.message_handler(func=lambda message: message.text == "ℹ️ Информация о подписке")
+@bot.message_handler(func=lambda message: message.text == "ℹ Информация о подписке")
 def handle_get_info(message):
     cfg = get_config(message.chat.id)
     if cfg != 0:
-        sub_end = get_user_info(message.chat.id)["subscription_end"]
-        dt_object = datetime.fromisoformat(sub_end.replace("Z", "+03:00"))
-        user_friendly_format = dt_object.strftime("%d.%m.%Y, %H:%M")
+        date = sub_end(message.chat.id)
 
         bot.send_message(
             message.chat.id, f"🔑 Ваш конфиг: {cfg}\n"
-                             f"⏳Подписка истекает {user_friendly_format}",
+                             f"⏳Подписка истекает {date}",
             parse_mode='HTML')
     else:
         bot.send_message(
@@ -261,6 +258,8 @@ def successful_payment(message):
     else:
         bot.send_message(message.chat.id, "🚨 Ошибка при активации подписки. Свяжитесь с поддержкой.")
 
+
+
     # Удаляем транзакцию
     transactions.pop(user_id, None)
 
@@ -397,6 +396,40 @@ def send_instructions(user_id):
         reply_markup=instructions_keyboard()
     )
 
+def handle_ref_bonus(telegram_id):
+    ref_id = get_user_info(telegram_id)["referral_id"]
+    if ref_id:
+        ref_bonus = get_user_info(telegram_id)["is_used_ref_bonus"]
+        days_for_paid = 7
+        days_for_ref = 15
+        if ref_bonus == False:
+            extend = extend_subscription(telegram_id, days=days_for_paid)
+            if extend:
+                change_ref_bonus_status(telegram_id, True)
+                date_paid = sub_end(telegram_id)
+                bot.send_message(
+                    telegram_id,
+                    f"🎁 Так как Вы переходили по реферальной ссылке, Вам начислен бонус {days_for_paid} дней подписки бесплатно!"
+                    f"⏳ Подписка истекает {date_paid}"
+                )
+            else:
+                bot.send_message(
+                    telegram_id,
+                    f"❌ Ошибка получения реферального бонуса. Обратитесь в поддержу."
+                )
+            extend_ref = extend_subscription(ref_id, days=days_for_ref)
+            if extend_ref:
+                date_ref = sub_end(ref_id)
+                bot.send_message(
+                    ref_id,
+                    f"🎁 Так как по Вашей ссылке оплатили подписку, Вам начислен бонус {days_for_ref} дней подписки бесплатно!"
+                    f"⏳ Подписка истекает {date_ref}"
+                )
+            else:
+                bot.send_message(
+                    telegram_id,
+                    f"❌ Ошибка получения реферального бонуса за {telegram_id}. Обратитесь в поддержу."
+                )
 
 if __name__ == "__main__":
     bot.remove_webhook()
