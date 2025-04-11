@@ -255,6 +255,7 @@ def successful_payment(message):
             parse_mode="HTML"
         )
         send_instructions(message.chat.id)
+        handle_ref_bonus(message.chat.id)
     else:
         bot.send_message(message.chat.id, "🚨 Ошибка при активации подписки. Свяжитесь с поддержкой.")
 
@@ -348,6 +349,7 @@ def check_payment(call):
                             parse_mode="HTML"
                         )
                         send_instructions(chat_id)
+                        handle_ref_bonus(chat_id)
                     else:
                         bot.send_message(chat_id, "🚨 Ошибка при активации подписки. Свяжитесь с поддержкой.")
 
@@ -400,17 +402,18 @@ def handle_ref_bonus(telegram_id):
     ref_id = get_user_info(telegram_id)["referral_id"]
     if ref_id:
         ref_bonus = get_user_info(telegram_id)["is_used_ref_bonus"]
-        days_for_paid = 7
-        days_for_ref = 15
         if ref_bonus == False:
+            days_for_paid = 7
+            days_for_ref = 15
             extend = extend_subscription(telegram_id, days=days_for_paid)
             if extend:
                 change_ref_bonus_status(telegram_id, True)
                 date_paid = sub_end(telegram_id)
                 bot.send_message(
                     telegram_id,
-                    f"🎁 Так как Вы переходили по реферальной ссылке, Вам начислен бонус {days_for_paid} дней подписки бесплатно!"
-                    f"⏳ Подписка истекает {date_paid}"
+                    f"🎁 Вы перешли по реферальной ссылке - Вам начислен бонус <b>{days_for_paid} дней подписки</b> бесплатно!\n"
+                    f"⏳ Подписка истекает {date_paid}",
+                    parse_mode='HTML'
                 )
             else:
                 bot.send_message(
@@ -422,8 +425,9 @@ def handle_ref_bonus(telegram_id):
                 date_ref = sub_end(ref_id)
                 bot.send_message(
                     ref_id,
-                    f"🎁 Так как по Вашей ссылке оплатили подписку, Вам начислен бонус {days_for_ref} дней подписки бесплатно!"
-                    f"⏳ Подписка истекает {date_ref}"
+                    f"🎁 По Вашей ссылке оплатили подписку, Вам начислен бонус <b>{days_for_ref} дней подписки</b> бесплатно!\n"
+                    f"⏳ Подписка истекает {date_ref}",
+                    parse_mode='HTML'
                 )
             else:
                 bot.send_message(
